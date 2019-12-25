@@ -1,42 +1,95 @@
-var createError = require("http-errors");
-var express = require("express");
-var path = require("path");
-var cookieParser = require("cookie-parser");
-var logger = require("morgan");
-var indexRouter = require("./routes/index");
-var usersRouter = require("./routes/users");
-
-var app = express();
-app.get("/", function(req, res) {
-  res.send("Hello World!");
+const express = require("express");
+const MongoClient = require("mongodb").MongoClient;
+const objectId = require("mongodb").ObjectID;
+   
+const app = express();
+const jsonParser = express.json();
+ 
+const mongoClient = new MongoClient("mongodb://localhost:27017/", { useNewUrlParser: true });
+ 
+let dbClient;
+ 
+app.use(express.static(__dirname + "/public"));
+ 
+mongoClient.connect(function(err, client){
+    if(err) return console.log(err);
+    dbClient = client;
+    app.locals.collection = client.db("usersdb").collection("users");
+    app.listen(3000, function(){
+        console.log("Сервер ожидает подключения...");
+    });
 });
-// view engine setup
-// app.set('views', path.join(__dirname, 'views'));
-// app.set('view engine', 'jade');
-
-app.use(logger("dev"));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "public")));
-
-app.use("/", indexRouter);
-app.use("/favourite", usersRouter);
-
-// catch 404 and forward to error handler
-app.use(function(req, res, next) {
-  next(createError(404));
+ 
+app.get("/api/users", function(req, res){
+        
+    const collection = req.app.locals.collection;
+    collection.find({}).toArray(function(err, users){
+         
+        if(err) return console.log(err);
+        res.send(users)
+    });
+     
 });
-
-// error handler
-app.use(function(err, req, res, next) {
-  // set locals, only providing error in development
-  res.locals.message = err.message;
-  res.locals.error = req.app.get("env") === "development" ? err : {};
-
-  // render the error page
-  res.status(err.status || 500);
-  res.render("error");
+app.get("/api/users/:id", function(req, res){
+        
+    const id = new objectId(req.params.id);
+    const collection = req.app.locals.collection;
+    collection.findOne({_id: id}, function(err, user){
+               
+        if(err) return console.log(err);
+        res.send(user);
+    });
+});
+   
+app.post("/api/users", jsonParser, function (req, res) {
+       
+    if(!req.body) return res.sendStatus(400);
+       
+    const userName = req.body.name;
+    const userAge = req.body.age;
+    const user = {name: userName, age: userAge};
+       
+    const collection = req.app.locals.collection;
+    collection.insertOne(user, function(err, result){
+               
+        if(err) return console.log(err);
+        res.send(user);
+    });
+});
+    
+app.delete("/api/users/:id", function(req, res){
+        
+    const id = new objectId(req.params.id);
+    const collection = req.app.locals.collection;
+    collection.findOneAndDelete({_id: id}, function(err, result){
+               
+        if(err) return console.log(err);    
+        let user = result.value;
+        res.send(user);
+    });
+});
+   
+app.put("/api/users", jsonParser, function(req, res){
+        
+    if(!req.body) return res.sendStatus(400);
+    const id = new objectId(req.body.id);
+    const userName = req.body.name;
+    const userAge = req.body.age;
+       
+    const collection = req.app.locals.collection;
+    collection.findOneAndUpdate({_id: id}, { $set: {age: userAge, name: userName}},
+         {returnOriginal: false },function(err, result){
+               
+        if(err) return console.log(err);     
+        const user = result.value;
+        res.send(user);
+    });
+});
+ 
+// прослушиваем прерывание работы программы (ctrl-c)
+process.on("SIGINT", () => {
+    dbClient.close();
+    process.exit();
 });
 
 module.exports = app;
